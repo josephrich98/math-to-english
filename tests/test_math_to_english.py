@@ -2,7 +2,7 @@
 
 import pytest
 
-from math_to_english import translate_math, to_english, looks_like_math
+from math_to_english import math2english, looks_like_math
 
 
 # -- core fragment translation -------------------------------------------
@@ -27,32 +27,32 @@ from math_to_english import translate_math, to_english, looks_like_math
         (r"x_{i}", "x sub i"),
     ],
 )
-def test_translate_math(latex, expected):
-    assert translate_math(latex) == expected
+def test_math2english(latex, expected):
+    assert math2english(latex) == expected
 
 
 # -- intervals and sets ---------------------------------------------------
 def test_open_interval():
-    assert translate_math(r"A=(0,1)") == "A equals the open interval from 0 to 1"
+    assert math2english(r"A=(0,1)") == "A equals the open interval from 0 to 1"
 
 
 def test_closed_interval():
-    assert translate_math(r"A=[0,1]") == "A equals the closed interval from 0 to 1"
+    assert math2english(r"A=[0,1]") == "A equals the closed interval from 0 to 1"
 
 
 def test_set_roster():
-    assert translate_math(r"A={1,2,3}") == "A equals the set 1, 2, 3"
+    assert math2english(r"A={1,2,3}") == "A equals the set 1, 2, 3"
 
 
 def test_set_builder():
     assert (
-        translate_math(r"{q \in \mathbb Q : q^2 < 2}")
+        math2english(r"{q \in \mathbb Q : q^2 < 2}")
         == "the set of q in Q such that q squared less than 2"
     )
 
 
 def test_dots_in_list():
-    assert translate_math(r"1,2,10,\dots") == "1, 2, 10, and so on"
+    assert math2english(r"1,2,10,\dots") == "1, 2, 10, and so on"
 
 
 # -- inline detection heuristic ------------------------------------------
@@ -75,23 +75,23 @@ def test_looks_like_math(inner, is_math):
 # -- document-level conversion -------------------------------------------
 def test_inline_math_in_prose():
     text = "An element (u \\in S) is an **upper bound** of (A)."
-    assert to_english(text) == "An element u in S is an upper bound of A."
+    assert math2english(text) == "An element u in S is an upper bound of A."
 
 
 def test_english_parenthetical_preserved():
     text = "An ordered set (or totally ordered set) is a set (S)."
-    assert to_english(text) == "An ordered set (or totally ordered set) is a set S."
+    assert math2english(text) == "An ordered set (or totally ordered set) is a set S."
 
 
 def test_display_block():
     text = "If\n[\na \\le b \\quad \\text{and} \\quad b \\le a,\n]\nthen"
-    result = to_english(text)
+    result = math2english(text)
     assert "a less than or equal to b and b less than or equal to a" in result
 
 
 def test_standard_delimiters():
-    assert to_english(r"We know $a \le b$ here.") == "We know a less than or equal to b here."
-    assert to_english(r"Then \(x^2\) is positive.") == "Then x squared is positive."
+    assert math2english(r"We know $a \le b$ here.") == "We know a less than or equal to b here."
+    assert math2english(r"Then \(x^2\) is positive.") == "Then x squared is positive."
 
 
 # -- function application -------------------------------------------------
@@ -106,7 +106,7 @@ def test_standard_delimiters():
     ],
 )
 def test_function_application(latex, expected):
-    assert translate_math(latex) == expected
+    assert math2english(latex) == expected
 
 
 # -- accents, binomials, primes ------------------------------------------
@@ -123,18 +123,18 @@ def test_function_application(latex, expected):
     ],
 )
 def test_accents_and_scripts(latex, expected):
-    assert translate_math(latex) == expected
+    assert math2english(latex) == expected
 
 
 # -- matrices and environments -------------------------------------------
 def test_matrix():
     latex = r"\begin{pmatrix} a & b \\ c & d \end{pmatrix}"
-    assert translate_math(latex) == "the matrix with row 1: a, b; row 2: c, d"
+    assert math2english(latex) == "the matrix with row 1: a, b; row 2: c, d"
 
 
 def test_cases():
     latex = r"\begin{cases} x & \text{if } x>0 \\ -x & \text{if } x<0 \end{cases}"
-    result = translate_math(latex)
+    result = math2english(latex)
     assert "x if x greater than 0" in result
     assert "minus x if x less than 0" in result
 
@@ -152,11 +152,11 @@ def test_cases():
     ],
 )
 def test_physics_mode(latex, expected):
-    assert translate_math(latex, mode="physics") == expected
+    assert math2english(latex, mode="physics") == expected
 
 
 def test_div_is_operator_in_math_mode():
-    assert translate_math(r"a \div b") == "a divided by b"
+    assert math2english(r"a \div b") == "a divided by b"
 
 
 # -- chemistry mode -------------------------------------------------------
@@ -173,16 +173,16 @@ def test_div_is_operator_in_math_mode():
     ],
 )
 def test_chemistry_mode(latex, expected):
-    assert translate_math(latex, mode="chemistry") == expected
+    assert math2english(latex, mode="chemistry") == expected
 
 
 def test_embedded_ce_in_prose():
     doc = r"The reaction \ce{2H2 + O2 -> 2H2O} is exothermic."
-    assert to_english(doc, mode="chemistry") == (
+    assert math2english(doc, mode="chemistry") == (
         "The reaction 2 H 2 plus O 2 yields 2 H 2 O is exothermic."
     )
 
 
 def test_invalid_mode():
     with pytest.raises(ValueError):
-        translate_math("x", mode="biology")
+        math2english("x", mode="biology")

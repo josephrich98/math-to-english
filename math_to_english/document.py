@@ -10,14 +10,14 @@ Supported math delimiters:
   (see :func:`looks_like_math`); genuine asides such as
   "(or totally ordered set)" are left untouched.
 
-The public entry point is :func:`to_english`.
+The public entry point is :func:`math2english`.
 """
 
 import re
 
-from .translator import MathTranslator, translate_math
+from .translator import MathTranslator, translate_fragment
 
-__all__ = ["to_english", "looks_like_math", "DocumentConverter"]
+__all__ = ["math2english", "looks_like_math", "DocumentConverter"]
 
 
 def looks_like_math(inner):
@@ -209,10 +209,40 @@ def _sentence_case(text):
     return text
 
 
-def to_english(text, strip_markdown=True, mode="math"):
-    """Convert a document string containing math into spoken English.
+# A whole document is signalled by explicit math delimiters ($...$, \(...\),
+# \[...\]) which only make sense when math is embedded in surrounding prose.
+_DOC_DELIMITER = re.compile(r"\$|\\\(|\\\[")
 
-    ``mode`` selects the vocabulary: ``"math"`` (default), ``"physics"`` or
-    ``"chemistry"``.
+
+def _looks_like_document(text):
+    """Heuristic: is *text* a whole document (prose + math) or a bare fragment?
+
+    A document gets delimiter and markdown handling; a bare LaTeX fragment is
+    translated directly.  Documents are recognised by explicit math delimiters,
+    multiple lines, or ordinary English words -- anything else is treated as a
+    single math fragment.
     """
-    return DocumentConverter(strip_markdown=strip_markdown, mode=mode).convert(text)
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if "\n" in stripped or _DOC_DELIMITER.search(stripped):
+        return True
+    # Count plain prose words (3+ letters) after removing LaTeX commands and
+    # environment names, which also contain letters (e.g. \begin{pmatrix}).
+    residue = re.sub(r"\\(?:begin|end)\s*\{[^}]*\}", " ", stripped)
+    residue = re.sub(r"\\[A-Za-z]+", " ", residue)
+    return len(re.findall(r"[A-Za-z]{3,}", residue)) >= 2
+
+
+def math2english(text, strip_markdown=True, mode="math"):
+    """Convert LaTeX math into spoken English for text-to-speech.
+
+    Accepts either a bare LaTeX fragment (e.g. ``r"s = \\sup A"``) or a whole
+    document mixing prose and math (e.g. ``"An element (u \\in S) is ..."``);
+    the two are told apart automatically.  ``mode`` selects the vocabulary:
+    ``"math"`` (default), ``"physics"`` or ``"chemistry"``.  ``strip_markdown``
+    applies to document input only.
+    """
+    if _looks_like_document(text):
+        return DocumentConverter(strip_markdown=strip_markdown, mode=mode).convert(text)
+    return translate_fragment(text, mode=mode)

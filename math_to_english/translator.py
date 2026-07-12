@@ -1,7 +1,8 @@
 """Translate a fragment of LaTeX math into spoken English.
 
-The public entry point is :func:`translate_math` (and the :class:`MathTranslator`
-class for callers that want to customise the vocabulary).  The translator is a
+The low-level entry point is :func:`translate_fragment` (and the
+:class:`MathTranslator` class for callers that want to customise the
+vocabulary); :func:`math_to_english.math2english` wraps it.  The translator is a
 small tokenizer feeding a recursive-descent renderer, which keeps structural
 constructs (fractions, roots, powers, sets, intervals) readable without a full
 LaTeX parser.
@@ -12,7 +13,7 @@ import re
 from . import symbols as S
 from . import chemistry as C
 
-__all__ = ["MathTranslator", "translate_math", "MODES"]
+__all__ = ["MathTranslator", "translate_fragment", "MODES"]
 
 MODES = ("math", "physics", "chemistry")
 
@@ -521,9 +522,11 @@ def _translator(mode):
     return _TRANSLATORS[mode]
 
 
-def translate_math(latex, mode="math"):
-    """Translate a LaTeX math fragment into spoken English.
+def translate_fragment(latex, mode="math"):
+    """Translate a bare LaTeX math fragment into spoken English.
 
-    ``mode`` is one of ``"math"``, ``"physics"`` or ``"chemistry"``.
+    ``mode`` is one of ``"math"``, ``"physics"`` or ``"chemistry"``.  This is the
+    low-level fragment engine; :func:`math_to_english.math2english` wraps it with
+    document/prose handling and is the public entry point.
     """
     return _translator(mode).translate(latex)

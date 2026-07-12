@@ -3,26 +3,25 @@
 Convert documents (or bare LaTeX fragments) that mix prose and math notation
 into plain English suitable for text-to-speech.
 
-    >>> from math_to_english import translate_math
-    >>> translate_math(r"a \\le b \\quad \\text{and} \\quad b \\le a")
+    >>> from math_to_english import math2english
+    >>> math2english(r"a \\le b \\quad \\text{and} \\quad b \\le a")
     'a less than or equal to b and b less than or equal to a'
 
-    >>> from math_to_english import to_english
-    >>> to_english("An element (u \\in S) is an upper bound.")
+    >>> math2english("An element (u \\in S) is an upper bound.")
     'An element u in S is an upper bound.'
 """
 
-from .translator import MathTranslator, translate_math, MODES
-from .document import DocumentConverter, to_english, looks_like_math
+from .translator import MathTranslator, translate_fragment, MODES
+from .document import DocumentConverter, math2english, looks_like_math
 
 __version__ = "0.2.0"
 
 __all__ = [
-    "translate_math",
-    "to_english",
+    "math2english",
     "MathTranslator",
     "DocumentConverter",
     "looks_like_math",
+    "translate_fragment",
     "MODES",
     "__version__",
 ]

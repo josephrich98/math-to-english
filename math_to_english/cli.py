@@ -1,16 +1,25 @@
-"""Command-line interface: ``math2english [FILE]``.
+"""Command-line interface: ``math2english [INPUT]``.
 
-Reads a document from a file (or stdin) and writes the spoken-English version
-to stdout.  With ``--math`` the input is treated as a single bare LaTeX
-fragment instead of a full document.
+``INPUT`` may be a file to convert, or literal text/LaTeX to convert directly::
+
+    math2english math_doc.md            # convert a document file
+    math2english "q \\in \\mathbb Q"      # translate a bare LaTeX fragment
+    math2english                        # read a document from stdin
+
+Bare fragments and whole documents are told apart automatically; pass
+``--math`` to force fragment interpretation.  Add ``--dictate`` to also speak
+the result aloud with the system text-to-speech engine.
 """
 
 import argparse
+import os
+import shutil
+import subprocess
 import sys
 
 from . import __version__
-from .document import to_english
-from .translator import translate_math
+from .document import math2english
+from .translator import translate_fragment
 
 
 def build_parser():
@@ -20,9 +29,10 @@ def build_parser():
         "text-to-speech.",
     )
     parser.add_argument(
-        "file",
+        "input",
         nargs="?",
-        help="Input file (default: read from stdin).",
+        help="Input file, or literal text/LaTeX to convert "
+        "(default: read from stdin).",
     )
     parser.add_argument(
         "-o",
@@ -32,7 +42,7 @@ def build_parser():
     parser.add_argument(
         "--math",
         action="store_true",
-        help="Treat the whole input as one LaTeX math fragment.",
+        help="Force treating the input as one bare LaTeX math fragment.",
     )
     parser.add_argument(
         "-m",
@@ -47,23 +57,57 @@ def build_parser():
         action="store_true",
         help="Do not strip markdown formatting (**bold**, headings, bullets).",
     )
+    parser.add_argument(
+        "--dictate",
+        action="store_true",
+        help="Speak the result aloud using the system text-to-speech engine "
+        "(macOS 'say', Linux 'spd-say'/'espeak'). Still writes text output too.",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
+
+
+def _find_tts():
+    """Return the argv prefix for an available TTS command, or None."""
+    for cmd in ("say", "spd-say", "espeak-ng", "espeak"):
+        path = shutil.which(cmd)
+        if path:
+            return [path]
+    return None
+
+
+def dictate(text):
+    """Speak ``text`` aloud. Returns True on success, False otherwise."""
+    tts = _find_tts()
+    if tts is None:
+        sys.stderr.write(
+            "math2english: --dictate needs a text-to-speech command "
+            "('say' on macOS, 'spd-say' or 'espeak' on Linux).\n"
+        )
+        return False
+    try:
+        subprocess.run(tts + [text], check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        sys.stderr.write(f"math2english: text-to-speech failed: {exc}\n")
+        return False
+    return True
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    if args.file:
-        with open(args.file, "r", encoding="utf-8") as handle:
+    if args.input is None:
+        text = sys.stdin.read()
+    elif os.path.exists(args.input):
+        with open(args.input, "r", encoding="utf-8") as handle:
             text = handle.read()
     else:
-        text = sys.stdin.read()
+        text = args.input  # literal text / LaTeX
 
     if args.math:
-        result = translate_math(text.strip(), mode=args.mode)
+        result = translate_fragment(text.strip(), mode=args.mode)
     else:
-        result = to_english(
+        result = math2english(
             text, strip_markdown=not args.keep_markdown, mode=args.mode
         )
 
@@ -72,6 +116,9 @@ def main(argv=None):
             handle.write(result + "\n")
     else:
         sys.stdout.write(result + "\n")
+
+    if args.dictate and not dictate(result):
+        return 1
     return 0
 
 
