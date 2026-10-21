@@ -40,7 +40,49 @@ math2english("An element (u \\in S) is an upper bound of (A).")
 math2english math_doc.md                 # convert a document file
 math2english "q \in \mathbb Q"           # translate a bare LaTeX fragment
 math2english math_doc.md --dictate       # also speak the result aloud
+math2english math_doc.md --annotate      # keep the math, add "In words: ..."
 ```
+
+### Annotate: keep the math, add the words
+
+`--annotate` (or `annotate=True`) leaves every expression exactly as written and
+follows it with its reading, so the document still renders correctly but can
+also be read aloud. Display math gets an `In words:` line; non-trivial inline
+math gets a parenthetical (single symbols like `$x$` are left alone):
+
+```text
+For every $q \in \mathbb Q$ we have
+$$
+s = \sup A
+$$
+        ↓
+For every $q \in \mathbb Q$ (in words: q in Q) we have
+$$
+s = \sup A
+$$
+In words: s equals the supremum of A.
+```
+
+## Agent skill (Claude Code, Codex, ...)
+
+[`skills/math-in-words/SKILL.md`](skills/math-in-words/SKILL.md) is an
+[Agent Skill](https://agentskills.io) that makes a coding agent answer in the
+annotated style above: correct math, followed by "In words: ...". It uses the
+`math2english` CLI to check readings and to convert existing documents when it
+is installed, and falls back to its own reading table when it is not.
+
+```bash
+# Claude Code (all projects)
+mkdir -p ~/.claude/skills && ln -s "$PWD/skills/math-in-words" ~/.claude/skills/math-in-words
+
+# Codex
+mkdir -p ~/.codex/skills && ln -s "$PWD/skills/math-in-words" ~/.codex/skills/math-in-words
+```
+
+The agent picks the skill up when you ask for math "in words" or for answers
+you can listen to, or you can call it directly with `/math-in-words`. To get
+this style in every answer, add a line such as "Follow the math-in-words skill
+whenever you write math" to your `CLAUDE.md` / `AGENTS.md`.
 
 ## Modes
 

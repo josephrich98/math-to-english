@@ -5,6 +5,7 @@
     math2english math_doc.md            # convert a document file
     math2english "q \\in \\mathbb Q"      # translate a bare LaTeX fragment
     math2english                        # read a document from stdin
+    math2english math_doc.md --annotate # keep the math, add "In words: ..."
 
 Bare fragments and whole documents are told apart automatically; pass
 ``--math`` to force fragment interpretation.  Add ``--dictate`` to also speak
@@ -18,7 +19,7 @@ import subprocess
 import sys
 
 from . import __version__
-from .document import math2english
+from .document import as_sentence, math2english
 from .translator import translate_fragment
 
 
@@ -51,6 +52,13 @@ def build_parser():
         default="math",
         help="Vocabulary mode (default: math). physics adds vectors, "
         "derivatives and bra-ket; chemistry reads \\ce{...} formulas.",
+    )
+    parser.add_argument(
+        "-a",
+        "--annotate",
+        action="store_true",
+        help="Keep the math as written and follow each expression with its "
+        "reading ('In words: ...'), so the output still displays correctly.",
     )
     parser.add_argument(
         "--keep-markdown",
@@ -106,9 +114,14 @@ def main(argv=None):
 
     if args.math:
         result = translate_fragment(text.strip(), mode=args.mode)
+        if args.annotate:
+            result = f"{text.strip()}\nIn words: {as_sentence(result)}"
     else:
         result = math2english(
-            text, strip_markdown=not args.keep_markdown, mode=args.mode
+            text,
+            strip_markdown=not args.keep_markdown,
+            mode=args.mode,
+            annotate=args.annotate,
         )
 
     if args.output:

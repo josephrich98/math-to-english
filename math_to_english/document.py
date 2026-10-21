@@ -3,6 +3,8 @@
 Supported math delimiters:
 
 * Standard LaTeX:  ``$...$``, ``$$...$$``, ``\\(...\\)``, ``\\[...\\]``.
+* Multi-line display blocks opened and closed by a line that is just ``$$``
+  or ``\\[`` / ``\\]``.
 * "Backslash-stripped" markdown (what ChatGPT/Claude output often becomes once
   rendered or copied): inline math in ``(...)`` and display math as a
   standalone ``[`` ... ``]`` block.  Because bare parentheses are also ordinary
@@ -10,7 +12,9 @@ Supported math delimiters:
   (see :func:`looks_like_math`); genuine asides such as
   "(or totally ordered set)" are left untouched.
 
-The public entry point is :func:`math2english`.
+The public entry point is :func:`math2english`.  With ``annotate=True`` the
+math is kept as written and each expression is followed by its reading
+("In words: ..."), so the text still displays correctly but can be read aloud.
 """
 
 import re
@@ -46,10 +50,10 @@ def looks_like_math(inner):
     return False
 
 
-# A standalone display-math block:  a line that is just "[" (optionally
-# indented) through the next line that is just "]".
-_DISPLAY_OPEN = re.compile(r"^\s*\[\s*$")
-_DISPLAY_CLOSE = re.compile(r"^\s*\]\s*$")
+# A standalone display-math block:  a line that is just "[", "\[" or "$$"
+# (optionally indented) through the next line that is just the matching closer.
+_DISPLAY_OPEN = re.compile(r"^(\s*)(\[|\\\[|\$\$)\s*$")
+_DISPLAY_CLOSERS = {"[": "]", "\\[": "\\]", "$$": "$$"}
 
 # Inline math with no nested parentheses.
 _INLINE_PAREN = re.compile(r"\(([^()]*)\)")
@@ -71,13 +75,19 @@ _MD_BLOCKQUOTE = re.compile(r"^\s*>\s?")
 _MD_BULLET = re.compile(r"^(\s*)[*+-]\s+")
 _MD_HRULE = re.compile(r"^\s*([-*_])\1{2,}\s*$")
 
+# Placeholder protecting already-handled math from later substitution passes.
+_PLACEHOLDER = re.compile("\x00(\\d+)\x00")
+
 
 class DocumentConverter:
     """Convert a mixed prose/math document into spoken English."""
 
-    def __init__(self, translator=None, strip_markdown=True, mode="math"):
+    def __init__(self, translator=None, strip_markdown=True, mode="math",
+                 annotate=False):
         self.translator = translator or MathTranslator(mode=mode)
-        self.strip_markdown = strip_markdown
+        # Annotated output is meant to be displayed, so markdown stays intact.
+        self.strip_markdown = strip_markdown and not annotate
+        self.annotate = annotate
 
     def convert(self, text):
         lines = text.splitlines()
@@ -85,8 +95,9 @@ class DocumentConverter:
         i = 0
         while i < len(lines):
             line = lines[i]
-            if _DISPLAY_OPEN.match(line):
-                block, i = self._read_display_block(lines, i)
+            opener = _DISPLAY_OPEN.match(line)
+            if opener:
+                block, i = self._read_display_block(lines, i, opener)
                 if block is not None:
                     out.append(block)
                     continue
@@ -95,16 +106,21 @@ class DocumentConverter:
         return "\n".join(out)
 
     # -- display math -----------------------------------------------------
-    def _read_display_block(self, lines, start):
+    def _read_display_block(self, lines, start, opener):
+        indent, delim = opener.groups()
+        closer = _DISPLAY_CLOSERS[delim]
         j = start + 1
         body = []
-        while j < len(lines) and not _DISPLAY_CLOSE.match(lines[j]):
+        while j < len(lines) and lines[j].strip() != closer:
             body.append(lines[j])
             j += 1
         if j >= len(lines):
-            return None, start  # no closing "]"; treat "[" as ordinary text
+            return None, start  # no closer; treat the opener as ordinary text
         latex = " ".join(s.strip() for s in body).strip()
         spoken = self.translator.translate(latex)
+        if self.annotate:
+            original = "\n".join(lines[start:j + 1])
+            return f"{original}\n{indent}In words: {as_sentence(spoken)}", j + 1
         spoken = _sentence_case(spoken)
         return spoken, j + 1
 
@@ -113,11 +129,15 @@ class DocumentConverter:
         if _MD_HRULE.match(line):
             return ""
 
+        # Each handled span becomes a placeholder so later passes cannot
+        # re-match the math (or its annotation); they are restored at the end.
+        self._spans = []
+
         # Translate standard delimiters first so their contents are protected.
-        line = _INLINE_DISPLAY_BS.sub(lambda m: " " + self._inline(m.group(1)) + " ", line)
-        line = _INLINE_DOLLAR2.sub(lambda m: self._inline(m.group(1)), line)
-        line = _INLINE_BACKSLASH.sub(lambda m: self._inline(m.group(1)), line)
-        line = _INLINE_DOLLAR1.sub(lambda m: self._inline(m.group(1)), line)
+        line = _INLINE_DISPLAY_BS.sub(lambda m: self._inline(*m.group(0, 1), pad=True), line)
+        line = _INLINE_DOLLAR2.sub(lambda m: self._inline(*m.group(0, 1)), line)
+        line = _INLINE_BACKSLASH.sub(lambda m: self._inline(*m.group(0, 1)), line)
+        line = _INLINE_DOLLAR1.sub(lambda m: self._inline(*m.group(0, 1)), line)
 
         # Chemistry/physics commands that appear without math delimiters.
         line = self._translate_embedded(line)
@@ -127,13 +147,27 @@ class DocumentConverter:
 
         if self.strip_markdown:
             line = self._strip_markdown(line)
+            line = self._restore(line)
             # Markdown structure has been flattened; drop leftover indentation
             # so text-to-speech does not stumble over stray whitespace.
             return line.strip()
-        return line.rstrip()
+        return self._restore(line).rstrip()
 
-    def _inline(self, latex):
-        return self.translator.translate(latex)
+    def _inline(self, original, latex, pad=False):
+        """Placeholder for one inline math span: its reading, or (annotating)
+        the original math followed by its reading."""
+        spoken = self.translator.translate(latex)
+        if self.annotate:
+            text = original
+            if " " in spoken:  # skip trivial readings such as (S) or $x$
+                text += f" (in words: {spoken})"
+        else:
+            text = f" {spoken} " if pad else spoken
+        self._spans.append(text)
+        return f"\x00{len(self._spans) - 1}\x00"
+
+    def _restore(self, line):
+        return _PLACEHOLDER.sub(lambda m: self._spans[int(m.group(1))], line)
 
     def _translate_embedded(self, line):
         out = []
@@ -147,15 +181,14 @@ class DocumentConverter:
             if args is None:
                 continue  # malformed: leave as-is
             out.append(line[pos:m.start()])
-            out.append(self.translator.translate("\\" + cmd + args))
+            out.append(self._inline(line[m.start():end], "\\" + cmd + args))
             pos = end
         out.append(line[pos:])
         return "".join(out)
 
     def _maybe_inline_paren(self, match):
-        inner = match.group(1)
-        if looks_like_math(inner):
-            return self.translator.translate(inner)
+        if looks_like_math(match.group(1)):
+            return self._inline(*match.group(0, 1))
         return match.group(0)  # keep genuine English parenthetical
 
     def _strip_markdown(self, line):
@@ -209,6 +242,11 @@ def _sentence_case(text):
     return text
 
 
+def as_sentence(text):
+    """Sentence-case *text* and end it with a full stop, for "In words: ..."."""
+    return _sentence_case(text.strip().rstrip(".,;:")) + "."
+
+
 # A whole document is signalled by explicit math delimiters ($...$, \(...\),
 # \[...\]) which only make sense when math is embedded in surrounding prose.
 _DOC_DELIMITER = re.compile(r"\$|\\\(|\\\[")
@@ -234,7 +272,7 @@ def _looks_like_document(text):
     return len(re.findall(r"[A-Za-z]{3,}", residue)) >= 2
 
 
-def math2english(text, strip_markdown=True, mode="math"):
+def math2english(text, strip_markdown=True, mode="math", annotate=False):
     """Convert LaTeX math into spoken English for text-to-speech.
 
     Accepts either a bare LaTeX fragment (e.g. ``r"s = \\sup A"``) or a whole
@@ -242,7 +280,16 @@ def math2english(text, strip_markdown=True, mode="math"):
     the two are told apart automatically.  ``mode`` selects the vocabulary:
     ``"math"`` (default), ``"physics"`` or ``"chemistry"``.  ``strip_markdown``
     applies to document input only.
+
+    With ``annotate=True`` the math is kept as written and each expression is
+    followed by its reading: display math gets an ``In words: ...`` line and
+    inline math a ``(in words: ...)`` parenthetical.
     """
     if _looks_like_document(text):
-        return DocumentConverter(strip_markdown=strip_markdown, mode=mode).convert(text)
-    return translate_fragment(text, mode=mode)
+        return DocumentConverter(
+            strip_markdown=strip_markdown, mode=mode, annotate=annotate
+        ).convert(text)
+    spoken = translate_fragment(text, mode=mode)
+    if annotate:
+        return f"{text.strip()}\nIn words: {as_sentence(spoken)}"
+    return spoken

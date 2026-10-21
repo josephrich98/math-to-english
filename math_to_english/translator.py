@@ -368,7 +368,10 @@ class _Parser:
 
         if tok in self.t.big_operators:
             # e.g. \sup A -> "the supremum of A"; the operand follows naturally.
-            self._emit(self.t.big_operators[tok])
+            # Limits/bounds in scripts are read in place: "the sum from i
+            # equals 1 to n of", "the limit as n goes to infinity of".
+            sub, sup = self._read_operator_scripts()
+            self._emit(_operator_phrase(tok, self.t.big_operators[tok], sub, sup))
             return
 
         if tok in self.t.functions:
@@ -377,6 +380,23 @@ class _Parser:
 
         # Plain word-mapped or unknown command.
         self._emit(self._render_command_word(tok))
+
+    def _read_operator_scripts(self):
+        """Consume ``_{..}`` / ``^{..}`` (in either order) after an operator."""
+        scripts = {}
+        while True:
+            self._skip_ws()
+            if self.i < len(self.tokens) and self.tokens[self.i] in self.t.ignored:
+                self.i += 1  # e.g. \limits
+                continue
+            if self.i >= len(self.tokens) or self.tokens[self.i] not in ("_", "^"):
+                break
+            kind = self.tokens[self.i]
+            if kind in scripts:
+                break
+            self.i += 1
+            scripts[kind] = self._read_arg().strip()
+        return scripts.get("_"), scripts.get("^")
 
     def _apply_script(self, kind):
         """Attach a superscript (^) or subscript (_) to the previous part."""
@@ -440,6 +460,24 @@ def _power_phrase(base, exponent):
     if exp in ("-1", "minus 1"):
         return f"{base} inverse"
     return f"{base} to the power of {exp}"
+
+
+_LIMIT_OPS = {r"\lim", r"\limsup", r"\liminf"}
+_RANGE_OPS = {r"\sum", r"\prod", r"\int", r"\oint"}
+
+
+def _operator_phrase(tok, phrase, sub, sup):
+    """Fold an operator's limits into its phrase, keeping the trailing "of"."""
+    if not sub and not sup:
+        return phrase
+    head = phrase[:-len(" of")] if phrase.endswith(" of") else phrase
+    if tok in _LIMIT_OPS and sub:
+        return f"{head} as {sub} of"
+    if tok in _RANGE_OPS and sub and sup:
+        return f"{head} from {sub} to {sup} of"
+    if tok in _RANGE_OPS and sup:
+        return f"{head} up to {sup} of"
+    return f"{head} over {sub} of"
 
 
 def _root_phrase(index, radicand):

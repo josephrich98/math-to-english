@@ -186,3 +186,64 @@ def test_embedded_ce_in_prose():
 def test_invalid_mode():
     with pytest.raises(ValueError):
         math2english("x", mode="biology")
+
+
+# -- annotate: keep the math, follow it with its reading ------------------
+def test_annotate_inline():
+    assert math2english(r"We know $a \le b$ here.", annotate=True) == (
+        r"We know $a \le b$ (in words: a less than or equal to b) here."
+    )
+
+
+def test_annotate_skips_trivial_inline():
+    text = "A set (S) with (u \\in S)."
+    assert math2english(text, annotate=True) == (
+        "A set (S) with (u \\in S) (in words: u in S)."
+    )
+
+
+def test_annotate_keeps_markdown():
+    text = r"An **upper bound** $u \in S$."
+    assert math2english(text, annotate=True).startswith("An **upper bound** $u")
+
+
+@pytest.mark.parametrize("opener, closer", [("[", "]"), ("\\[", "\\]"), ("$$", "$$")])
+def test_annotate_display_block(opener, closer):
+    text = f"Then\n  {opener}\n  \\sup A = 1.\n  {closer}\nso"
+    assert math2english(text, annotate=True) == (
+        f"Then\n  {opener}\n  \\sup A = 1.\n  {closer}\n"
+        "  In words: The supremum of A equals 1.\nso"
+    )
+
+
+def test_annotate_fragment():
+    assert math2english(r"s = \sup A", annotate=True) == (
+        "s = \\sup A\nIn words: s equals the supremum of A."
+    )
+
+
+def test_annotate_embedded_ce():
+    doc = r"The reaction \ce{H2O} forms."
+    assert math2english(doc, mode="chemistry", annotate=True) == (
+        r"The reaction \ce{H2O} (in words: H 2 O) forms."
+    )
+
+
+def test_multiline_dollar_display_block():
+    assert math2english("Then\n$$\nx^2\n$$\nholds.") == "Then\nx squared\nholds."
+
+
+# -- operator limits ------------------------------------------------------
+@pytest.mark.parametrize(
+    "latex, expected",
+    [
+        (r"\lim_{n\to\infty} a_n", "the limit as n goes to infinity of a sub n"),
+        (r"\sum_{i=1}^n a_i", "the sum from i equals 1 to n of a sub i"),
+        (r"\int_0^1 f(x)\,dx", "the integral from 0 to 1 of f of x d x"),
+        (r"\prod\limits_{k=1}^{n} k", "the product from k equals 1 to n of k"),
+        (r"\sup_{x \in A} f(x)", "the supremum over x in A of f of x"),
+        (r"\sup A", "the supremum of A"),
+    ],
+)
+def test_operator_limits(latex, expected):
+    assert math2english(latex) == expected
